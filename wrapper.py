@@ -22,6 +22,7 @@ from twisted.cred import error as credError
 from twisted.web._auth.wrapper import UnauthorizedResource
 
 
+
 class XHTMLUnauthorizedResource(object):
     """
     Simple IResource to escape Resource dispatch
@@ -38,17 +39,17 @@ class XHTMLUnauthorizedResource(object):
         """
         Send www-authenticate headers to the client
         """
-        
+
         session = request.getSession()
-        
+
         login_form = """
         <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN">
         <html>
-        	<head>
-        		<title>LOG IN</title>
-        	</head>
-        	<body>
-        	<form action="" method="POST">
+            <head>
+                <title>LOG IN</title>
+            </head>
+            <body>
+            <form action="" method="POST">
               <div class="row">
                 <div class="label"><label for="login">Login</label></div>
                 <div class="field">
@@ -64,16 +65,16 @@ class XHTMLUnauthorizedResource(object):
               </div>
 
               <div class="row">
-                <input class="form-element" type="submit" 
+                <input class="form-element" type="submit"
                        name="SUBMIT" value="Log in" />
               </div>
               <input type="hidden" name="camefrom" value="http://localhost:9000/login">
               <input type="hidden" name="scheme" value="cleartext">
             </form>
-        	</body>
+            </body>
         </html>
         """
-        
+
         return login_form
 
     def getChildWithDefault(self, path, request):
@@ -81,11 +82,9 @@ class XHTMLUnauthorizedResource(object):
         Disable resource dispatch
         """
         return self
-        
 
 
 
-        
 class XHTMLAuthSessionWrapper(object):
     """
     Wrap a portal, enforcing supported header-based authentication schemes.
@@ -135,7 +134,7 @@ class XHTMLAuthSessionWrapper(object):
             print "METHOD IS POST"
             "The login form has been submitted so process the credentials"
             args = request.args
-            scheme = args['scheme'][0] 
+            scheme = args['scheme'][0]
             for fact in self._credentialFactories:
                 if fact.scheme == scheme:
                     try:
@@ -149,7 +148,7 @@ class XHTMLAuthSessionWrapper(object):
                         print "WE ARE GOOD TO GO"
                         return util.DeferredResource(self._login(credentials))
                 else:
-                    return XHTMLUnauthorizedResource(self._credentialFactories) 
+                    return XHTMLUnauthorizedResource(self._credentialFactories)
         else:
             "Direct user to a login form"
             return XHTMLUnauthorizedResource(self._credentialFactories)
@@ -174,9 +173,9 @@ class XHTMLAuthSessionWrapper(object):
         so that the C{logout} callback will be invoked when rendering is
         complete.
         """
-        
+
         print "LOGIN SUCCEEDED"
-        
+
         class ResourceWrapper(proxyForInterface(IResource, 'resource')):
             """
             Wrap an L{IResource} so that whenever it or a child of it
