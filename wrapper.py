@@ -3,7 +3,7 @@
 # See LICENSE for details.
 
 """
-A guard implementation which supports form-based authentication
+A guard implementation which supports multiple web-based authentication
 schemes.
 
 If method is get and no credentials present browser is directed to login form
@@ -13,197 +13,151 @@ is checked against a hidden form input declaring as much (i.e value="cleartext")
 """
 
 from zope.interface import implements
+from twisted.internet import defer
 from twisted.python import log
 from twisted.python.components import proxyForInterface
-from twisted.web.resource import IResource
-from twisted.web import util
+from twisted.web import resource, util
 from twisted.web.error import ErrorPage
-from twisted.cred import error as credError
-from twisted.web._auth.wrapper import UnauthorizedResource
+from twisted.cred import credentials, error
 
 
-
-class XHTMLUnauthorizedResource(object):
+class UnauthorizedResource(resource.Resource):
     """
-    Simple IResource to escape Resource dispatch
+    TBD.
     """
-    implements(IResource)
+
     isLeaf = True
 
+    def __init__(self):
+        resource.Resource.__init__(self)
+        self._finished = False
 
-    def __init__(self, factories):
-        self._credentialFactories = factories
+    def _requestFinished(self, reason):
+        self._finished = True
 
+    def _failed(self, reason):
+        log.msg(reason.getErrorMessage())
 
-    def render(self, request):
+    def render_GET(self, request):
         """
-        Send www-authenticate headers to the client
-        """
-
-        session = request.getSession()
-
-        login_form = """
-        <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN">
-        <html>
-            <head>
-                <title>LOG IN</title>
-            </head>
-            <body>
-            <form action="" method="POST">
-              <div class="row">
-                <div class="label"><label for="login">Login</label></div>
-                <div class="field">
-                  <input type="text" name="login" id="login" value="admin" />
-                </div>
-              </div>
-
-              <div class="row">
-                <div class="label"><label for="password">Password</label></div>
-                <div class="field">
-                  <input type="password" name="password" id="password" value="letmein"/>
-                </div>
-              </div>
-
-              <div class="row">
-                <input class="form-element" type="submit"
-                       name="SUBMIT" value="Log in" />
-              </div>
-              <input type="hidden" name="camefrom" value="http://localhost:9000/login">
-              <input type="hidden" name="scheme" value="cleartext">
-            </form>
-            </body>
-        </html>
+        Send WWW-Authenticate headers to the client.
         """
 
-        return login_form
+        request.notifyFinish().addErrback(self._requestFinished)
+        log.msg('UnathorizedResource.render_GET')
+        if not self._finished:
+            return """<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN">
+<html>
+    <head>
+        <title>LOG IN</title>
+    </head>
+    <body>
+    <form action="/myapp/authorized" enctype="application/x-www-form-urlencoded" method="POST">
+      <div class="row">
+        <div class="label"><label for="login">Login</label></div>
+        <div class="field">
+          <input type="text" name="login" id="login" value="admin" />
+        </div>
+      </div>
 
-    def getChildWithDefault(self, path, request):
-        """
-        Disable resource dispatch
-        """
-        return self
+      <div class="row">
+        <div class="label"><label for="password">Password</label></div>
+        <div class="field">
+          <input type="password" name="password" id="password" value="letmein"/>
+        </div>
+      </div>
+
+      <div class="row">
+        <input class="form-element" type="submit"
+               name="SUBMIT" value="Log in" />
+      </div>
+      <input type="hidden" name="camefrom" value="http://localhost:9000/login">
+      <input type="hidden" name="scheme" value="myapp">
+    </form>
+    </body>
+</html>"""
 
 
 
-class XHTMLAuthSessionWrapper(object):
-    """
-    Wrap a portal, enforcing supported header-based authentication schemes.
-
-    @ivar _portal: The L{Portal} which will be used to retrieve L{IResource}
-        avatars.
-
-    @ivar _credentialFactories: A list of L{ICredentialFactory} providers which
-        will be used to decode I{Authorization} headers into L{ICredentials}
-        providers.
-    """
-    implements(IResource)
+class RootResource(resource.Resource):
     isLeaf = False
 
-    def __init__(self, portal, credentialFactories):
-        """
-        Initialize a session wrapper
+    def __init__(self, user):
+        resource.Resource.__init__(self)
+        self.user = user
+        children = ()
+        for childName, childResource in children:
+            self.putChild(childName, childResource)
 
-        @type portal: C{Portal}
-        @param portal: The portal that will authenticate the remote client
+    def getChild(self, path, request):
+        segments = request.postpath
 
-        @type credentialFactories: C{Iterable}
-        @param credentialFactories: The portal that will authenticate the
-            remote client based on one submitted C{ICredentialFactory}
+        if not path:
+            requestedResource = self
+        elif segments and segments[-1] == 'authorized':
+            requestedResource = AuthorizedResource(self.user)
+        else:
+            requestedResource = resource.Resource.getChild(self, path, request)
+        return requestedResource
+
+    def render_GET(self, request):
+        return 'txWebAuth: That thing we did, that does that thing you wanted.'
+
+
+
+class WebAuthSessionWrapper(resource.Resource):
+    """
+    Wrap a twisted.cred.portal, requiring authN/authZ via various providers.
+    """
+
+    isLeaf = False
+
+    def __init__(self, portal, credentialFactories, *children):
         """
+        Initialize a session wrapper.
+        """
+        resource.Resource.__init__(self)
         self._portal = portal
         self._credentialFactories = credentialFactories
+        for path, child in children:
+            self.putChild(path, child)
 
-
-    def render(self, request):
-        raise NotImplementedError
-
-
-    def processLogin(self, path, request):
-        """I process the login parameters"""
-
-
-    def getChildWithDefault(self, path, request):
+    def _authorizedResource(self, request):
         """
-        Inspect headers for method and route accordingly to either login form
-        or credential checker
+        Get the twisted.web.resource.IResource which the given request is
+        authorized to receive.  If the proper credentials are present, the
+        resource will be requested from the portal.
         """
-        method = request.method
 
-
-        if method == 'POST':
-            print "METHOD IS POST"
-            "The login form has been submitted so process the credentials"
-            args = request.args
-            scheme = args['scheme'][0]
-            for fact in self._credentialFactories:
-                if fact.scheme == scheme:
-                    try:
-                        credentials = fact.decode(request)
-                    except credError.LoginFailed:
-                        return UnauthorizedResource(self._credentialFactories)
-                    except:
-                        log.err(None, "Unexpected failure from credentials factory")
-                        return ErrorPage(500, None, None)
-                    else:
-                        print "WE ARE GOOD TO GO"
-                        return util.DeferredResource(self._login(credentials))
-                else:
-                    return XHTMLUnauthorizedResource(self._credentialFactories)
+        authProvider = None
+        session = request.getSession()
+        if session.avatar is not None:
+            return session.avatar
         else:
-            "Direct user to a login form"
-            return XHTMLUnauthorizedResource(self._credentialFactories)
+            userCredentials = credentials.Anonymous()
+            if request.method == 'POST':
+                authProvider = request.postpath[0]
+                for credentialFactory in self._credentialFactories:
+                    if credentialFactory.scheme == authProvider:
+                        userCredentials = credentialFactory.decode(request)
+                        break
+            return util.DeferredResource(self._login(userCredentials, request))
 
-
-    def _login(self, credentials):
+    def _login(self, credentials, request):
         """
-        Get the L{IResource} avatar for the given credentials.
+        Get the twisted.web.resource.IResource avatar for the given credentials.
 
-        @return: A L{Deferred} which will be called back with an L{IResource}
-            avatar or which will errback if authentication fails.
+        Returns a twisted.internet.defer.Deferred which will be called back with
+        a twisted.web.resource.IResource avatar or which will errback if
+        authentication fails.
         """
 
-        d = self._portal.login(credentials, None, IResource)
+        d = self._portal.login(credentials, request, resource.IResource)
         d.addCallbacks(self._loginSucceeded, self._loginFailed)
         return d
 
-
     def _loginSucceeded(self, (interface, avatar, logout)):
-        """
-        Handle login success by wrapping the resulting L{IResource} avatar
-        so that the C{logout} callback will be invoked when rendering is
-        complete.
-        """
-
-        print "LOGIN SUCCEEDED"
-
-        class ResourceWrapper(proxyForInterface(IResource, 'resource')):
-            """
-            Wrap an L{IResource} so that whenever it or a child of it
-            completes rendering, the cred logout hook will be invoked.
-
-            An assumption is made here that exactly one L{IResource} from
-            among C{avatar} and all of its children will be rendered.  If
-            more than one is rendered, C{logout} will be invoked multiple
-            times and probably earlier than desired.
-            """
-            def getChildWithDefault(self, name, request):
-                """
-                Pass through the lookup to the wrapped resource, wrapping
-                the result in L{ResourceWrapper} to ensure C{logout} is
-                called when rendering of the child is complete.
-                """
-                return ResourceWrapper(self.resource.getChildWithDefault(name, request))
-
-            def render(self, request):
-                """
-                Hook into response generation so that when rendering has
-                finished completely, C{logout} is called.
-                """
-                request.notifyFinish().addCallback(lambda ign: logout())
-                return super(ResourceWrapper, self).render(request)
-
-        return ResourceWrapper(avatar)
-
+        return avatar
 
     def _loginFailed(self, result):
         """
@@ -211,12 +165,32 @@ class XHTMLAuthSessionWrapper(object):
         expected authentication/authorization-related failures) or a server
         error page (for anything else).
         """
-        print "LOGIN FAILED"
-        if result.check(credError.Unauthorized, credError.LoginFailed):
-            return UnauthorizedResource(self._credentialFactories)
+
+        errorMessage = result.getErrorMessage()
+        if result.check(error.Unauthorized, error.LoginFailed):
+            log.msg('txsocmob.cred.HTTPSessionWrapper._loginFailed: ' + errorMessage)
+            return util.Redirect('/login')
         else:
-            log.err(
-                result,
-                "HTTPAuthSessionWrapper.getChildWithDefault encountered "
-                "unexpected error")
-            return ErrorPage(500, None, None)
+            return resource.ErrorPage(500, 'Server error.', errorMessage)
+
+    def render(self, request):
+        """
+        Find the twisted.web.resource.IResource avatar suitable for the given
+        request, if possible, and render it.  Otherwise, perhaps render an error
+        page requiring authorization or describing an internal server failure.
+        """
+
+        return self._authorizedResource(request).render(request)
+
+
+    def getChild(self, path, request):
+        """
+        TBD.
+        """
+
+        # Don't consume any segments of the request - this class should be
+        # transparent!
+
+        log.msg('getChild: ' + path)
+        request.postpath.insert(0, request.prepath.pop())
+        return self._authorizedResource(request)

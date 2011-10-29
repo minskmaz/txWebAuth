@@ -12,6 +12,8 @@ from zope.interface import Interface, Attribute
 from zope.interface import implements
 from twisted.cred import credentials, error
 
+
+
 class IFormCredentialFactory(Interface):
     """
     A credential factory defines a way to generate a particular kind of
@@ -27,11 +29,10 @@ class IFormCredentialFactory(Interface):
 
     def getChallenge(request):
         """
-        Generate a new challenge to be sent to a client. Same as the existing 
-        iweb.ICredentialFactory, except that getChallenge should return a URL 
+        Generate a new challenge to be sent to a client. Same as the existing
+        iweb.ICredentialFactory, except that getChallenge should return a URL
         that refers to login form
         """
-
 
 
     def decode(response, request):
@@ -63,28 +64,25 @@ class FormCredentialFactory(object):
     """
     implements(IFormCredentialFactory)
 
-    scheme = 'cleartext'
+    scheme = 'myapp'
 
     def __init__(self, authenticationRealm):
         self.authenticationRealm = authenticationRealm
-
+        self.url = '/%s/login' % (self.scheme,)
 
     def getChallenge(self, request):
-        """
-        Return a challenge including the HTTP authentication realm with which
-        this factory was created.
-        """
-        return {'realm': self.authenticationRealm}
-
+        return self.url
 
     def decode(self, request):
         """
         Extract the credentials from the POST body. Support
         'decode method so as not to break the interface'
         """
+
         args = request.args
-        creds = (args['login'][0], args['password'][0])
-        if len(creds) == 2:
-            return credentials.UsernamePassword(*creds)
-        else:
+        try:
+            creds = (args['login'][0], args['password'][0])
+        except KeyError:
             raise error.LoginFailed('Invalid credentials')
+        else:
+            return credentials.UsernamePassword(*creds)
