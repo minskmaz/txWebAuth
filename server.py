@@ -6,8 +6,23 @@ from twisted.application import internet, service
 from twisted.cred import checkers, portal
 from twisted.python import log
 from twisted.web import resource, server, static
+import credfactory, wrapper
 
-from txWebAuth import credfactory, wrapper
+
+class PostableFile(static.File):
+
+    def render(self, request):
+        #import pdb; pdb.set_trace()
+        pass
+        
+    def render_GET(self, request):
+        return self.render_GET(request)
+    
+    def render_POST(self, request):
+        ##import pdb; pdb.set_trace()
+        request.method = 'GET'
+        return self.render_GET(request)
+
 
 
 
@@ -19,12 +34,9 @@ def logout():
     log.msg('logout called.')
     return None
 
-
-
 def sessionExpired(session):
     log.msg('session expired.')
     session.avatar = None
-
 
 
 class WebAuthSession(server.Session):
@@ -72,12 +84,17 @@ class WebAuthenticatedRealm(object):
 
 credentialFactories = [credfactory.FormCredentialFactory("myapp")]
 
+def authorizedResource(*args, **kw):
+    avatar = resource.Resource()
+    avatar.putChild('myapp', PostableFile(*args, **kw))
+    return avatar
+
 root = wrapper.WebAuthSessionWrapper(
     portal.Portal(
-        WebAuthenticatedRealm(wrapper.UnauthorizedResource, static.File),
+        WebAuthenticatedRealm(wrapper.UnauthorizedResource, authorizedResource), #static.File
         [
             checkers.AllowAnonymousAccess(),
-            checkers.InMemoryUsernamePasswordDatabaseDontUse(**{'admin': 'letmein', 'ldb': 'letmein'})
+            checkers.InMemoryUsernamePasswordDatabaseDontUse(**{'jbernier': 'letmein', 'ldb': 'letmein'})
             #checkers.FilePasswordDB('httpd.password')
         ]
     ),

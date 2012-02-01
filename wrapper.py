@@ -52,7 +52,7 @@ class UnauthorizedResource(resource.Resource):
         <title>LOG IN</title>
     </head>
     <body>
-    <form action="/myapp/authorized" enctype="application/x-www-form-urlencoded" method="POST">
+    <form action="/myapp/" enctype="application/x-www-form-urlencoded" method="POST">
       <div class="row">
         <div class="label"><label for="login">Login</label></div>
         <div class="field">
@@ -90,6 +90,8 @@ class RootResource(resource.Resource):
             self.putChild(childName, childResource)
 
     def getChild(self, path, request):
+        ##import pdb
+        #pdb.set_trace()
         segments = request.postpath
 
         if not path:
@@ -128,7 +130,7 @@ class WebAuthSessionWrapper(resource.Resource):
         authorized to receive.  If the proper credentials are present, the
         resource will be requested from the portal.
         """
-
+        #import pdb; pdb.set_trace()
         authProvider = None
         session = request.getSession()
         if session.avatar is not None:
@@ -157,6 +159,8 @@ class WebAuthSessionWrapper(resource.Resource):
         return d
 
     def _loginSucceeded(self, (interface, avatar, logout)):
+        #import pdb
+        #pdb.set_trace()
         return avatar
 
     def _loginFailed(self, result):
@@ -165,7 +169,6 @@ class WebAuthSessionWrapper(resource.Resource):
         expected authentication/authorization-related failures) or a server
         error page (for anything else).
         """
-
         errorMessage = result.getErrorMessage()
         if result.check(error.Unauthorized, error.LoginFailed):
             log.msg('txsocmob.cred.HTTPSessionWrapper._loginFailed: ' + errorMessage)
